@@ -9,6 +9,13 @@ namespace MyMicroservices.Customers.Infrastructure.Configurations
         public void Configure(EntityTypeBuilder<Customer> builder)
         {
             builder.HasKey(o => o.Id);
+            builder.Property(o => o.Name).IsRequired();
+            builder.Property(o => o.Address).IsRequired();
+            builder.Property(o => o.DateOfBirth).IsRequired();
+
+
+            builder.Property(o => o.CreationDate).ValueGeneratedOnAdd().HasDefaultValueSql("CURRENT_TIMESTAMP");
+
             builder.HasMany(o => o.CreditCards);
 
             builder.ToTable("Customers");

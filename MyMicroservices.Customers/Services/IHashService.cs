@@ -3,7 +3,7 @@ using MyMicroservices.Customers.Models;
 
 namespace MyMicroservices.Customers.Services
 {
-    public interface ICreditCardHasher
+    public interface IHashService
     {
         CreditCard Create(CreditCardDto input, byte[] salt);
         byte[] CreateSalt();

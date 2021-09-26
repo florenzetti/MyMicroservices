@@ -7,7 +7,6 @@ using MyMicroservices.Customers.Models;
 using MyMicroservices.Customers.Services;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 
 namespace MyMicroservices.Customers.Controllers
@@ -17,13 +16,13 @@ namespace MyMicroservices.Customers.Controllers
     public class CustomersController : ControllerBase
     {
         private readonly CustomersContext _context;
-        private readonly ICreditCardHasher _creditCardHasher;
+        private readonly IHashService _hashService;
         private readonly IMapper _mapper;
 
-        public CustomersController(CustomersContext context, ICreditCardHasher creditCardHasher, IMapper mapper)
+        public CustomersController(CustomersContext context, IHashService creditCardHasher, IMapper mapper)
         {
             _context = context;
-            _creditCardHasher = creditCardHasher;
+            _hashService = creditCardHasher;
             _mapper = mapper;
         }
 
@@ -32,7 +31,7 @@ namespace MyMicroservices.Customers.Controllers
         public async Task<IActionResult> Get()
         {
             var customers = _mapper
-                .Map<IEnumerable<CustomerDto>>(await _context.Customers.ToListAsync());
+                .Map<IEnumerable<CustomerDto>>(await _context.Customers.Include(o => o.CreditCards).ToListAsync());
 
             return Ok(customers);
         }
@@ -55,11 +54,12 @@ namespace MyMicroservices.Customers.Controllers
         public async Task<IActionResult> Post([FromBody] CustomerDto customerDto)
         {
             var customer = _mapper.Map<Customer>(customerDto);
+
             _context.Customers.Add(customer);
 
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(Get), new { id = customer.Id }, customerDto);
+            return CreatedAtAction(nameof(Get), new { id = customer.Id }, null);
         }
 
         //Edit an existing Customer
@@ -98,7 +98,7 @@ namespace MyMicroservices.Customers.Controllers
 
         //Add a new Credit Card to an existing Customer
         [HttpPost("{id}/CreditCards")]
-        public async Task<IActionResult> AddCustomerCreditCard([FromRoute] Guid id, [FromBody] CreditCardDto creditCardDto)
+        public async Task<IActionResult> PostCustomerCreditCard([FromRoute] Guid id, [FromBody] CreditCardDto creditCardDto)
         {
             var customer = await _context.Customers.FindAsync(id);
             if (customer == null)
@@ -106,30 +106,32 @@ namespace MyMicroservices.Customers.Controllers
                 return NotFound();
             }
 
-            var creditCard = _creditCardHasher.Create(creditCardDto, _creditCardHasher.CreateSalt());
+            var creditCard = _hashService.Create(creditCardDto, _hashService.CreateSalt());
+            creditCard.CustomerId = customer.Id;
             _context.CreditCards.Add(creditCard);
 
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(AddCustomerCreditCard), new { id = creditCard.Id }, null);
+            return CreatedAtAction(nameof(ValidateCustomerCreditCard), new { id = customer.Id, creditCardId = creditCard.Id }, null);
         }
 
         //Edit an existing Credit Card
         [HttpPut("{id}/CreditCards/{creditCardId}")]
-        public async Task<IActionResult> EditCustomerCreditCard([FromRoute] Guid id, [FromRoute] Guid creditCardId, [FromBody] CreditCardDto creditCardDto)
+        public async Task<IActionResult> PutCustomerCreditCard([FromRoute] Guid id, [FromRoute] Guid creditCardId, [FromBody] CreditCardDto creditCardDto)
         {
-            var creditCard = await _context.CreditCards.FindAsync(creditCardId);
+            var creditCard = await _context.CreditCards
+                .Include(o => o.Customer)
+                .FirstOrDefaultAsync(o => o.Id == creditCardId);
+
             if (creditCard == null || creditCard.CustomerId != id)
             {
                 return NotFound();
             }
 
-            var newSalt = _creditCardHasher.CreateSalt();
-            var creditCardUpdated = _creditCardHasher.Create(creditCardDto, newSalt);
+            var creditCardUpdated = _hashService.Create(creditCardDto, _hashService.CreateSalt());
             creditCard.CardNumberHash = creditCardUpdated.CardNumberHash;
-            creditCard.ExpiryDateHash = creditCardUpdated.ExpiryDateHash;
+            creditCard.ExpiryDate = creditCardUpdated.ExpiryDate;
             creditCard.CVVHash = creditCardUpdated.CVVHash;
-            creditCard.Customer.Salt = Convert.ToBase64String(newSalt);
 
             await _context.SaveChangesAsync();
 
@@ -138,7 +140,7 @@ namespace MyMicroservices.Customers.Controllers
 
         //Delete an existing Credit Card
         [HttpDelete("{id}/CreditCards/{creditCardId}")]
-        public async Task<IActionResult> DeleteCustomerCreditCard([FromRoute] Guid id, [FromRoute] Guid creditCardId, [FromBody] CreditCardDto creditCardDto)
+        public async Task<IActionResult> DeleteCustomerCreditCard([FromRoute] Guid id, [FromRoute] Guid creditCardId)
         {
             var creditCard = await _context.CreditCards.FindAsync(creditCardId);
             if (creditCard == null || creditCard.CustomerId != id)
@@ -152,27 +154,29 @@ namespace MyMicroservices.Customers.Controllers
             return NoContent();
         }
 
-        //Validate a Credit Card: This method will accept credit card information and validate that
-        //the customer indeed “owns” that credit card.
-        //not a REST endpoint
-        [HttpPost("{id}/CreditCards/Validate")]
-        public async Task<IActionResult> CheckCustomerCreditCard([FromRoute] Guid id, [FromBody] CreditCardDto creditCardDto)
-        {
-            var customer = await _context.Customers
-                .Include(o => o.CreditCards)
-                .FirstOrDefaultAsync(o => o.Id == id);
 
-            if (customer == null)
+
+        /// <summary>
+        /// <para>Validate a Credit Card: This method will accept credit card information and validate that
+        /// the customer indeed “owns” that credit card.</para>
+        /// </summary>
+        /// <param name="id">Customer Id</param>
+        /// <param name="creditCardDto">Credit card informations</param>
+        [HttpPost("{id}/CreditCards/{creditCardId}")]
+        public async Task<IActionResult> ValidateCustomerCreditCard([FromRoute] Guid id, [FromRoute] Guid creditCardId, [FromBody] CreditCardDto creditCardDto)
+        {
+            var creditCard = await _context.CreditCards.FindAsync(creditCardId);
+
+            if (creditCard == null || creditCard.CustomerId != id)
             {
                 return NotFound();
             }
 
-            var creditCardToValidate = _creditCardHasher.Create(creditCardDto, Convert.FromBase64String(customer.Salt));
+            var creditCardToValidate = _hashService.Create(creditCardDto, Convert.FromBase64String(creditCard.Salt));
 
-            if (customer.CreditCards.Any(o =>
-             o.CardNumberHash == creditCardToValidate.CardNumberHash &&
-             o.ExpiryDateHash == creditCardToValidate.ExpiryDateHash &&
-             o.CVVHash == creditCardToValidate.CVVHash))
+            if (creditCard.CardNumberHash == creditCardToValidate.CardNumberHash &&
+             creditCard.ExpiryDate == creditCardToValidate.ExpiryDate &&
+             creditCard.CVVHash == creditCardToValidate.CVVHash)
             {
                 return Ok();
             }

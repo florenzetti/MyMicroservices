@@ -7,15 +7,16 @@ using System.Security.Cryptography;
 namespace MyMicroservices.Customers.Services
 {
     //based on https://docs.microsoft.com/en-us/aspnet/core/security/data-protection/consumer-apis/password-hashing?view=aspnetcore-5.0
-    public class CreditCardHasher : ICreditCardHasher
+    public class HashService : IHashService
     {
         public CreditCard Create(CreditCardDto input, byte[] salt)
         {
             return new CreditCard()
             {
                 CardNumberHash = HashValue(input.CardNumber, salt),
-                ExpiryDateHash = HashValue(input.ExpiryDate, salt),
-                CVVHash = HashValue(input.CVV, salt)
+                ExpiryDate = input.ExpiryDate,
+                CVVHash = HashValue(input.CVV, salt),
+                Salt = Convert.ToBase64String(salt)
             };
         }
 
