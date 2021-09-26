@@ -13,6 +13,7 @@ namespace MyMicroservices.Customers.Services
         {
             return new CreditCard()
             {
+                Type = input.Type,
                 CardNumberHash = HashValue(input.CardNumber, salt),
                 ExpiryDate = input.ExpiryDate,
                 CVVHash = HashValue(input.CVV, salt),

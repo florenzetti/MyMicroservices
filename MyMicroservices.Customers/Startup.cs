@@ -64,10 +64,12 @@ namespace MyMicroservices.Customers
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             //ensure that database is created
-            var scope = app.ApplicationServices.CreateScope();
-            scope.ServiceProvider
+            using (var scope = app.ApplicationServices.CreateScope())
+            {
+                scope.ServiceProvider
                 .GetRequiredService<CustomersContext>()
                 .Database.EnsureCreated();
+            }
 
             if (env.IsDevelopment())
             {

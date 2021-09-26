@@ -128,10 +128,13 @@ namespace MyMicroservices.Customers.Controllers
                 return NotFound();
             }
 
+            //TODO: improve the data transfer
             var creditCardUpdated = _hashService.Create(creditCardDto, _hashService.CreateSalt());
+            creditCard.Type = creditCardUpdated.Type;
             creditCard.CardNumberHash = creditCardUpdated.CardNumberHash;
             creditCard.ExpiryDate = creditCardUpdated.ExpiryDate;
             creditCard.CVVHash = creditCardUpdated.CVVHash;
+            creditCard.Salt = creditCardUpdated.Salt;
 
             await _context.SaveChangesAsync();
 
