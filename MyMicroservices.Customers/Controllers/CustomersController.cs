@@ -40,7 +40,9 @@ namespace MyMicroservices.Customers.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(Guid id)
         {
-            var customer = await _context.Customers.FindAsync(id);
+            var customer = await _context.Customers
+                .Include(o => o.CreditCards)
+                .FirstOrDefaultAsync(o => o.Id == id);
             if (customer == null)
             {
                 return NotFound();
